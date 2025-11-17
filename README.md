@@ -1,163 +1,288 @@
+# 👣 Social Distance Monitor (Jetson + Docker + poseNet)
 
-# Social Distance Monitor (Jetson poseNet)
-
-Real-time **social-distance visualizer** built on NVIDIA Jetson and `jetson-inference`’s poseNet.
+Simple real‑time **social‑distance visualizer** running inside Dusty’s `jetson-inference` Docker container on NVIDIA Jetson.
 
 The script:
-- Captures live video from a V4L2 camera (`/dev/video0` → fallback to `/dev/video1`)
-- Detects people using poseNet (`resnet18-body`)
-- Computes the **Euclidean distance** between people (with hip → shoulder fallback)
-- Draws **green lines** for safe distances and **red lines** when people are too close
-- Logs counts of people and violations to `room.log`
+
+- 🎥 Takes live video from your Jetson camera (e.g. `/dev/video0`)
+- 🧍‍♂️🧍‍♀️ Detects people using `poseNet` (`resnet18-body`)
+- 📏 Calculates **Euclidean distance** between each pair of people
+- 🔴🟢 Draws **red lines** when people are too close and **green lines** when they are okay
+- 🧾 Writes a log file `room.log` with how many people and how many violations were seen
+
+We keep everything **simple and transparent** so you know exactly what is happening.
 
 ---
 
-## Features
+## 🧩 What we use in the code (in plain language)
 
-- Runs entirely on Jetson (Nano / Xavier / Orin)
-- Uses poseNet `resnet18-body`
-- Hip keypoints + Shoulder fallback for center calculation
-- Euclidean distance for accurate measurement
-- Configurable threshold
-- Auto-generated `room.log`
+- **poseNet from Dusty’s `jetson-inference` project**  
+  GitHub: `dusty-nv/jetson-inference` (it already contains poseNet, detectNet, etc.)
+
+- **Euclidean distance**  
+  For two centers `(x1, y1)` and `(x2, y2)` we compute:
+
+  ```python
+  dx = x1 - x2
+  dy = y1 - y2
+  d = (dx**2 + dy**2) ** 0.5
+  ```
+
+  If `d` is smaller than a threshold (`THRESHOLD_PX`), we treat it as a **violation** and color the line **red**.
+
+- **Hip + Shoulder keypoints for center of person**
+  - First we try **hips** (keypoints 11 and 12).  
+  - If hips are missing, we fall back to **shoulders** (keypoints 5 and 6).  
+  - The average of left + right point gives us a **center** for that person.
+
+  This fixes the issue where the log was always `people=0, viol=0` even in a crowd, because sometimes the hips were not detected or were outside the frame.
+
+- **Log file `room.log`**  
+  For every loop we log a line like:
+
+  ```text
+  2025-11-17 12:34:56,poses=5,people=3,viol=2
+  ```
+
+  - `poses`  = how many people poseNet saw  
+  - `people` = how many centers we successfully calculated (hip or shoulder)  
+  - `viol`   = how many pairs were too close  
+
+  The log is created automatically in the same folder as `social_distance.py`.
 
 ---
 
-# Jetson Setup & Running Instructions
+## 📁 Step 1 – Create and mount a `Development` folder
 
-These are the **exact steps used on the Jetson**, without any Git cloning instructions.
+We **do not** code directly inside the `jetson-inference` repo.  
+Instead we use a clean separate folder called `Development`.
 
----
-
-## 1. Confirm jetson-inference is installed
+On the **host Jetson (outside Docker)**:
 
 ```bash
-python3 -c "import jetson_inference, jetson_utils; print('OK')"
+mkdir -p ~/Development
 ```
 
-If this prints `OK`, the environment is good.
+We then mount this folder into the Docker container by editing `run.sh` (the script that launches Dusty’s `jetson-inference` container).
 
----
-
-## 2. Run the script (IMPORTANT: Do NOT run as root)
-
-Jetson prevents root from opening X11/OpenGL windows.  
-Running as root causes:
-
-```
-failed to open X11 server connection
-monitor: stopped after 0 frames
-```
-
-So always run as normal user:
+In the `sudo docker run ...` block of `run.sh`, add:
 
 ```bash
-export DISPLAY=:0
-python3 social_distance.py
+-v /home/ms77930/Development:/app/dev \
+-it --name dev_container \
 ```
 
-This opens the camera window and draws lines between detected people.
+> 🔁 You can change `dev_container` to any container name you like.
+
+### 🤔 Why this `Development` mount?
+
+- We had **accessibility issues** working directly inside the `jetson-inference` paths from the container.  
+- Mounting `~/Development` as `/app/dev` gives us:
+  - A **simple project space** we control from host + container
+  - All our code is visible on the host for editing (VS Code, etc.)
+  - The container can still use **all of jetson-inference’s libraries** without us copying this project inside that repo.
+- Whatever we save in `~/Development` on the host is instantly available at `/app/dev` inside the container.
 
 ---
 
-## 3. About the Log File (`room.log`)
+## 📂 Step 2 – Create the project folder and files
 
-The script **automatically creates** `room.log`.
+On the **host** (your normal user, e.g. `ms77930@Soumya:~$`):
 
-Example entry:
-
-```
-2025-11-17 12:34:56,poses=5,people=3,viol=2
-```
-
-- **poses** = persons detected by poseNet  
-- **people** = valid centers after hip/shoulder fallback  
-- **viol** = violation count (distance < threshold)  
-
-No need to manually create or upload the log file.
-
----
-
-# Why Shoulder Keypoints (5 & 6) Were Added
-
-Originally the script used:
-
-- Left hip (ID 11)  
-- Right hip (ID 12)  
-
-These determine the body center.
-
-### ❌ Issue in real scenes
-Many camera angles **do not capture hips**, such as:
-
-- Top-down / CCTV angles  
-- Crowd scenes  
-- Mid-body cropping (hips out of frame)  
-
-poseNet often fails to detect hips in these conditions.
-
-Resulting in:
-
-```
-people = 0
-viol = 0
+```bash
+cd ~/Development
+mkdir social_distance_monitor
+cd social_distance_monitor
 ```
 
-even when many people are visible.
+Inside this folder you place:
 
----
+- `social_distance.py`  ← our main script  
+- (optional) `posenet.py` or any helper file you want
 
-# ✔️ Shoulder Fallback (Fix)
+You can copy the file from USB, use an editor like `nano`, or paste the code from your editor.
 
-If hips are missing, we now automatically use:
+Example (quick way with nano):
 
-- Left shoulder (ID 5)  
-- Right shoulder (ID 6)  
-
-Reasons why shoulders work better:
-
-- Shoulders are almost **always visible**
-- poseNet detects shoulders more reliably
-- Helps in crowded rooms
-- Works with chest-level or overhead cameras
-
----
-
-# 🔥 Final Result
-
-Thanks to hip → shoulder fallback:
-
-- Detection is stable  
-- Center points exist even when hips are missing  
-- `room.log` correctly reflects people count  
-- Violations trigger without failure  
-- The system works in real-world environments  
-
----
-
-# How It Works (Flow)
-
-1. poseNet detects people  
-2. Attempt using hip keypoints  
-3. If hips missing → fallback to shoulders  
-4. Compute person center  
-5. Compute Euclidean distance between every pair  
-6. Draw lines and count violations  
-7. Log everything to `room.log`  
-
----
-
-# Logging Format
-
-```
-YYYY-MM-DD HH:MM:SS,poses=X,people=Y,viol=Z
+```bash
+nano social_distance.py
+# paste the code, save and exit
 ```
 
 ---
 
-# Author
+## 🐳 Step 3 – Start the Docker container
 
-Replace with your actual details:
+Every time you want to run the project:
+
+1. **Allow local X11 access** (so Docker GUI can open windows):
+
+   ```bash
+   xhost +local:
+   ```
+
+2. **Start the container** (if it is not already running):
+
+   ```bash
+   sudo docker start dev_container
+   ```
+
+3. **Enter the container shell**:
+
+   ```bash
+   sudo docker exec -it dev_container /bin/bash
+   ```
+
+You should now see something like:
+
+```text
+root@<some-jetson-container>:/#
+```
+
+This means you are **inside** the Docker container.
+
+---
+
+## 🚀 Step 4 – Run the Social Distance Monitor
+
+Inside the **container shell**:
+
+1. Go to the mounted folder:
+
+   ```bash
+   cd /app/dev/social_distance_monitor
+   ```
+
+2. (First time only) make the script executable:
+
+   ```bash
+   chmod +x social_distance.py
+   ```
+
+3. Find which video device you want to use:
+
+   ```bash
+   ls /dev/video*
+   ```
+
+   Usually it is `/dev/video0`, but if you have more cameras you might see `/dev/video1`, etc.
+
+4. Run the script (example with `/dev/video0`):
+
+   ```bash
+   ./social_distance.py /dev/video0
+   ```
+
+   - A window should open with the camera feed.
+   - Lines between people will be **green** (safe) or **red** (too close).
+   - The file `room.log` will be created/updated in this same directory.
+
+> 💡 Because the folder is mounted, `room.log` and any output you create will also appear on the host in `~/Development/social_distance_monitor`.
+
+---
+
+## 👀 Why hips alone were not enough (and why we added shoulders)
+
+At first we only used the **hip keypoints** (11 + 12) for each person.  
+In theory this is good because hips are near the center of mass.
+
+But in our real test videos:
+
+- The camera often showed only the **upper body**  
+- People were partially **cropped** in the frame  
+- poseNet sometimes missed the hip keypoints completely
+
+So even with a crowd in front of the camera, our script saw:
+
+```text
+people=0, viol=0
+```
+
+because there were **no valid centers** to calculate.
+
+### ✅ Our fix: hip → shoulder fallback
+
+We kept the original logic but added a fallback:
+
+```python
+L = kpt_xy(p, 11)   # left_hip
+R = kpt_xy(p, 12)   # right_hip
+
+if not (L and R):
+    L = kpt_xy(p, 5)   # left_shoulder
+    R = kpt_xy(p, 6)   # right_shoulder
+```
+
+- If hips exist → we use them  
+- If hips are missing → we automatically switch to shoulders  
+
+Shoulders are easier for poseNet to detect because they are:
+
+- higher in the frame  
+- almost always visible in normal camera angles  
+
+Now the log file correctly shows people counts and violations.
+
+---
+
+## 🧠 Summary of what the script does
+
+1. Reads one camera frame at a time (from `/dev/videoX`)
+2. Runs poseNet (`resnet18-body`) to detect people
+3. For each person:
+   - Try hips (11 & 12)
+   - If hips missing, use shoulders (5 & 6)
+   - Compute center point
+4. For each pair of people:
+   - Compute **Euclidean distance**
+   - Compare with `THRESHOLD_PX`
+   - Draw red/green line
+   - Count violations
+5. Draw small circles on each center
+6. Append a line to `room.log` with `poses`, `people`, `viol`
+
+---
+
+## 📝 Log file details
+
+- File name: `room.log`
+- Location: same folder as `social_distance.py` (`/app/dev/social_distance_monitor`)
+- Created automatically on first run
+- One line per update, for example:
+
+  ```text
+  2025-11-17 12:34:56,poses=5,people=3,viol=2
+  ```
+
+You can later use this file for:
+
+- Plotting how crowded the area was over time  
+- Checking how often people were too close  
+- Simple analytics and experiments
+
+---
+
+## 🙋‍♂️ Why not just code inside the jetson-inference repo?
+
+We purposely **did NOT** put our project directly inside the `jetson-inference` folders because:
+
+- Those folders belong to the main library and can get messy  
+- There were **accessibility/permission issues** from inside the Docker container  
+- Updates to `jetson-inference` might overwrite or conflict with our files
+
+Mounting `~/Development` as `/app/dev` gives us:
+
+- A clean, personal **playground** for projects  
+- Easy access from both **host** and **container**
+- Full power of jetson-inference without touching its internal structure
+
+Think of it as our own little lab on top of Jetson 🧪.
+
+---
+
+## 👤 Author (fill in your details)
 
 - **Your Name**  
-- GitHub: https://github.com/your-username
+- GitHub: `https://github.com/your-username`
+
+Feel free to change the folder names, container name, or threshold values to match your own setup. The idea is to keep it **simple, clear, and easy to modify**. ✨
