@@ -186,6 +186,15 @@ Inside the **container shell**:
 
 ---
 
+## 📸 Example Output
+It might look something like this depending upon the crowd that is being recorded.
+<p align="center">
+  <img src="crowd_image_1.jpg" alt="Output 1" width="45%">
+  <img src="crowd_image_2.jpg" alt="Output 2" width="45%">
+</p>
+
+---
+
 ## 👀 Why hips alone were not enough (and why we added shoulders)
 
 At first we only used the **hip keypoints** (11 + 12) for each person.  
