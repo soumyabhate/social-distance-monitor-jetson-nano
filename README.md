@@ -187,7 +187,9 @@ Inside the **container shell**:
 ---
 
 ## 📸 Example Output
-It might look something like this depending upon the crowd that is being recorded.
+It might look something like this depending upon the crowd that is being recorded. 
+**Note**- Long coats or oversized clothing can sometimes cause misclassification or reduced detection confidence. This is normal because such clothing hides arms, legs, and parts of the torso, making it difficult for poseNet to clearly identify keypoints like hips, knees, or elbows. Since the model relies on these visible joints to build a skeleton, heavy or loose clothing can reduce accuracy — this behavior is expected.
+
 <p align="center">
   <img src="crowd_image_1.jpg" alt="Output 1" width="45%">
   <img src="crowd_image_2.jpg" alt="Output 2" width="45%">
