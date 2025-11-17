@@ -1,6 +1,9 @@
-# 👣 Social Distance Monitor (Jetson + Docker + poseNet)
+# 👣 Social Distance Monitor on Jetson Nano via poseNet
+**Course:** DATA 690 – Special Topics in AI  
+**Student:** Soumya Bhate  
+**Instructor:** Prof. Levan Sulimanov
 
-Simple real‑time **social‑distance visualizer** running inside Dusty’s `jetson-inference` Docker container on NVIDIA Jetson.
+Simple real‑time **social‑distance-monitor** running inside Dusty’s `jetson-inference` Docker container on NVIDIA Jetson.
 
 The script:
 
@@ -10,13 +13,13 @@ The script:
 - 🔴🟢 Draws **red lines** when people are too close and **green lines** when they are okay
 - 🧾 Writes a log file `room.log` with how many people and how many violations were seen
 
-We keep everything **simple and transparent** so you know exactly what is happening.
+I kept everything **simple and transparent** so you know exactly what is happening.
 
 ---
 
-## 🧩 What we use in the code (in plain language)
+## 🧩 What we use in the code?
 
-- **poseNet from Dusty’s `jetson-inference` project**  
+- **poseNet from `jetson-inference`** 
   GitHub: `dusty-nv/jetson-inference` (it already contains poseNet, detectNet, etc.)
 
 - **Euclidean distance**  
@@ -65,11 +68,13 @@ mkdir -p ~/Development
 
 We then mount this folder into the Docker container by editing `run.sh` (the script that launches Dusty’s `jetson-inference` container).
 
-In the `sudo docker run ...` block of `run.sh`, add:
-
+1. The `sudo docker run ...` line of `run.sh`, should be:
+```bash
+sudo docker run --runtime nvidia -it --name dev_container \
+```
+2. In the same `sudo docker run ...` block where all -v commands are pasted add path:
 ```bash
 -v /home/ms77930/Development:/app/dev \
--it --name dev_container \
 ```
 
 > 🔁 You can change `dev_container` to any container name you like.
@@ -87,7 +92,7 @@ In the `sudo docker run ...` block of `run.sh`, add:
 
 ## 📂 Step 2 – Create the project folder and files
 
-On the **host** (your normal user, e.g. `ms77930@Soumya:~$`):
+On the **host** (your normal user, e.g. mine was `ms77930@Soumya:~$`):
 
 ```bash
 cd ~/Development
@@ -124,13 +129,13 @@ Every time you want to run the project:
 2. **Start the container** (if it is not already running):
 
    ```bash
-   sudo docker start dev_container
+   docker start dev_container
    ```
 
 3. **Enter the container shell**:
 
    ```bash
-   sudo docker exec -it dev_container /bin/bash
+   docker exec -it dev_container /bin/bash
    ```
 
 You should now see something like:
@@ -262,27 +267,9 @@ You can later use this file for:
 
 ---
 
-## 🙋‍♂️ Why not just code inside the jetson-inference repo?
-
-We purposely **did NOT** put our project directly inside the `jetson-inference` folders because:
-
-- Those folders belong to the main library and can get messy  
-- There were **accessibility/permission issues** from inside the Docker container  
-- Updates to `jetson-inference` might overwrite or conflict with our files
-
-Mounting `~/Development` as `/app/dev` gives us:
-
-- A clean, personal **playground** for projects  
-- Easy access from both **host** and **container**
-- Full power of jetson-inference without touching its internal structure
-
-Think of it as our own little lab on top of Jetson 🧪.
-
----
-
-## 👤 Author (fill in your details)
-
-- **Your Name**  
-- GitHub: `https://github.com/your-username`
+## 🙏 Acknowledgements
+- Developed as part of the mini project for the course **DATA 690 – Special Topics in AI (UMBC)**.
+- Under the guidance of **Prof. Levan Sulimanov**.  
+- Built on **NVIDIA Jetson Nano**, **JetPack 5.x**, and the **Jetson-Inference** framework from **Dusty's**.
 
 Feel free to change the folder names, container name, or threshold values to match your own setup. The idea is to keep it **simple, clear, and easy to modify**. ✨
