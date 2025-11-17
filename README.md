@@ -1,4 +1,8 @@
-# Social Distance Monitor (Jetson poseNet)
+# Real-Time Social Distancing Detection & Monitoring on Jetson Nano
+**Course:** DATA 690 – Special Topics in AI  
+**Student:** Soumya Bhate  
+**Instructor:** Prof. Levan Sulimanov
+---
 
 Real‑time **social‑distance visualizer** built on NVIDIA Jetson and `jetson-inference`’s poseNet.
 
@@ -42,8 +46,6 @@ The script:
 └── README.md               # This file
 ```
 
-> Rename the script to `social_distance.py` if it currently has a different name before pushing to GitHub.
-
 ---
 
 ## Requirements
@@ -68,7 +70,7 @@ The script:
 1. **Clone this repository**
 
 ```bash
-git clone https://github.com/<your-username>/<your-repo-name>.git
+git clone https://github.com/soumyabhate/.git
 cd <your-repo-name>
 ```
 
