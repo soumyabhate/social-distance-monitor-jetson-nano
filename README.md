@@ -1,317 +1,163 @@
-# Real-Time Social Distancing Detection & Monitoring on Jetson Nano
-**Course:** DATA 690 – Special Topics in AI  
-**Student:** Soumya Bhate  
-**Instructor:** Prof. Levan Sulimanov
----
 
-Real‑time **social‑distance visualizer** built on NVIDIA Jetson and `jetson-inference`’s poseNet.
+# Social Distance Monitor (Jetson poseNet)
+
+Real-time **social-distance visualizer** built on NVIDIA Jetson and `jetson-inference`’s poseNet.
 
 The script:
 - Captures live video from a V4L2 camera (`/dev/video0` → fallback to `/dev/video1`)
 - Detects people using poseNet (`resnet18-body`)
-- Computes the **Euclidean distance** between people (based on hip keypoints)
+- Computes the **Euclidean distance** between people (with hip → shoulder fallback)
 - Draws **green lines** for safe distances and **red lines** when people are too close
 - Logs counts of people and violations to `room.log`
 
 ---
 
-## Demo (Concept)
-
-> ✔️ Live camera feed  
-> ✔️ Colored lines between detected people  
-> ✔️ `ALERT` status when violations are detected  
-
-(You can add a GIF or screenshot here later.)
-
----
-
 ## Features
 
-- ✅ Runs **entirely on-device** on NVIDIA Jetson
-- ✅ Automatic camera selection (`/dev/video0` → `/dev/video1`)
-- ✅ Uses poseNet `resnet18-body` model from `jetson-inference`
-- ✅ **Euclidean distance** calculation between people
-- ✅ Configurable pixel threshold (`THRESHOLD_PX`) for safe distance
-- ✅ Simple logging to `room.log` (timestamp, people count, violations)
-- ✅ Minimal, single‑file script (`social_distance.py`)
+- Runs entirely on Jetson (Nano / Xavier / Orin)
+- Uses poseNet `resnet18-body`
+- Hip keypoints + Shoulder fallback for center calculation
+- Euclidean distance for accurate measurement
+- Configurable threshold
+- Auto-generated `room.log`
 
 ---
 
-## Project Structure
+# Jetson Setup & Running Instructions
 
-```text
-.
-├── social_distance.py      # Main script (poseNet social-distance demo)
-├── room.log                # Auto-generated log file (created at runtime)
-└── README.md               # This file
-```
+These are the **exact steps used on the Jetson**, without any Git cloning instructions.
 
 ---
 
-## Requirements
-
-### Hardware
-
-- NVIDIA Jetson device (Nano / Xavier / Orin, etc.)
-- USB or CSI camera compatible with V4L2
-- Display connected (HDMI) or remote display forwarding (e.g., VNC)
-
-### Software
-
-- JetPack with CUDA and cuDNN properly installed
-- [`jetson-inference`](https://github.com/dusty-nv/jetson-inference) library installed with Python bindings
-- Python 3 (typically `python3` on Jetson)
-- `jetson.utils` and `jetson_inference` Python modules available
-
----
-
-## Installation
-
-1. **Clone this repository**
-
-```bash
-git clone https://github.com/soumyabhate/.git
-cd <your-repo-name>
-```
-
-2. **Make sure `jetson-inference` is installed**
-
-Follow the official instructions for building and installing `jetson-inference` with Python bindings on Jetson.
-
-(Short version – just a reminder, not the full guide):
-
-```bash
-# Example (do this outside your repo, once per device)
-cd ~
-git clone --recursive https://github.com/dusty-nv/jetson-inference
-cd jetson-inference
-mkdir build
-cd build
-cmake ..
-make -j$(nproc)
-sudo make install
-sudo ldconfig
-```
-
-3. **Verify Python modules**
-
-From Python on your Jetson, verify:
+## 1. Confirm jetson-inference is installed
 
 ```bash
 python3 -c "import jetson_inference, jetson_utils; print('OK')"
 ```
 
-If you see `OK` with no errors, you’re good.
+If this prints `OK`, the environment is good.
 
 ---
 
-## Usage
+## 2. Run the script (IMPORTANT: Do NOT run as root)
 
-From inside your project folder:
+Jetson prevents root from opening X11/OpenGL windows.  
+Running as root causes:
+
+```
+failed to open X11 server connection
+monitor: stopped after 0 frames
+```
+
+So always run as normal user:
 
 ```bash
+export DISPLAY=:0
 python3 social_distance.py
 ```
 
-By default, the script will:
-
-- Open `/dev/video0`  
-- If that fails, try `/dev/video1`  
-- Open a display window (`display://0`)  
-- Start processing frames in real time
-
-To **stop** the script:
-
-- Close the display window, or  
-- Use `Ctrl + C` in the terminal
+This opens the camera window and draws lines between detected people.
 
 ---
 
-## Configuration
+## 3. About the Log File (`room.log`)
 
-### Social-distance threshold
+The script **automatically creates** `room.log`.
 
-At the top of the script, you’ll see:
+Example entry:
 
-```python
-THRESHOLD_PX = 180  # pixel threshold for too-close
+```
+2025-11-17 12:34:56,poses=5,people=3,viol=2
 ```
 
-- `THRESHOLD_PX` is the **pixel distance** threshold between two people’s hip centers.
-- If the Euclidean distance between two people is **less than** this value, the line between them is **red** (violation).
-- Otherwise, it’s **green** (safe).
+- **poses** = persons detected by poseNet  
+- **people** = valid centers after hip/shoulder fallback  
+- **viol** = violation count (distance < threshold)  
 
-You can tune this value according to:
-
-- Your camera’s resolution
-- Field of view
-- Physical layout of the room
-
-> Example:  
-> - Closer camera / smaller scene → use **larger** threshold (e.g., 200–250)  
-> - Wider shot / more zoomed-out → use **smaller** threshold (e.g., 130–180)
+No need to manually create or upload the log file.
 
 ---
 
-## How It Works (Internals)
+# Why Shoulder Keypoints (5 & 6) Were Added
 
-The core logic is in three steps:
+Originally the script used:
 
-### 1. Pose detection
+- Left hip (ID 11)  
+- Right hip (ID 12)  
 
-The script loads poseNet:
+These determine the body center.
 
-```python
-from jetson_inference import poseNet
-net = poseNet("resnet18-body", threshold=0.15)
+### ❌ Issue in real scenes
+Many camera angles **do not capture hips**, such as:
+
+- Top-down / CCTV angles  
+- Crowd scenes  
+- Mid-body cropping (hips out of frame)  
+
+poseNet often fails to detect hips in these conditions.
+
+Resulting in:
+
+```
+people = 0
+viol = 0
 ```
 
-For each frame:
-
-```python
-poses = net.Process(img)
-```
-
-Each `pose` is a detected person with multiple keypoints.
+even when many people are visible.
 
 ---
 
-### 2. Compute person centers (using hips)
+# ✔️ Shoulder Fallback (Fix)
 
-For every detected person:
+If hips are missing, we now automatically use:
 
-```python
-L = kpt_xy(p, 11)   # left_hip
-R = kpt_xy(p, 12)   # right_hip
-if L and R:
-    centers.append(((L[0] + R[0]) * 0.5, (L[1] + R[1]) * 0.5))
-```
+- Left shoulder (ID 5)  
+- Right shoulder (ID 6)  
 
-- It uses **left hip (11)** and **right hip (12)** keypoints.
-- Takes the average of their `(x, y)` coordinates as the person’s **center**.
+Reasons why shoulders work better:
+
+- Shoulders are almost **always visible**
+- poseNet detects shoulders more reliably
+- Helps in crowded rooms
+- Works with chest-level or overhead cameras
 
 ---
 
-### 3. Euclidean distance between all pairs
+# 🔥 Final Result
 
-For every pair of detected people:
+Thanks to hip → shoulder fallback:
 
-```python
-dx = ax - bx
-dy = ay - by
-d = (dx**2 + dy**2) ** 0.5  # Euclidean distance
-bad = d < THRESHOLD_PX
-color = (255, 0, 0, 255) if bad else (0, 255, 0, 255)
-jetson.utils.cudaDrawLine(img, (int(ax), int(ay)), (int(bx), int(by)), color, 3)
+- Detection is stable  
+- Center points exist even when hips are missing  
+- `room.log` correctly reflects people count  
+- Violations trigger without failure  
+- The system works in real-world environments  
+
+---
+
+# How It Works (Flow)
+
+1. poseNet detects people  
+2. Attempt using hip keypoints  
+3. If hips missing → fallback to shoulders  
+4. Compute person center  
+5. Compute Euclidean distance between every pair  
+6. Draw lines and count violations  
+7. Log everything to `room.log`  
+
+---
+
+# Logging Format
+
 ```
-
-- `d` is the **Euclidean distance** between two centers.
-- If `d < THRESHOLD_PX`, the line is **red** and it counts as a **violation**.
-- If `d >= THRESHOLD_PX`, the line is **green**.
-
-It also draws small circles on each person center:
-
-```python
-jetson.utils.cudaDrawCircle(img, (int(cx), int(cy)), 6, (0, 200, 255, 255))
+YYYY-MM-DD HH:MM:SS,poses=X,people=Y,viol=Z
 ```
 
 ---
 
-## Logging
+# Author
 
-The script writes to a log file:
-
-```text
-room.log
-```
-
-Each line looks like:
-
-```text
-2025-11-17 10:32:45,people=3,viol=1
-```
-
-Where:
-
-- `people` = number of detected people (with valid hip keypoints)
-- `viol`   = number of violating pairs (too close)
-
-This can be used later for:
-
-- Simple analytics (how crowded the room was)
-- Estimating compliance over time
-
----
-
-## Troubleshooting
-
-### 1. No camera / black window
-
-- Check that your camera is connected.
-- Run:
-
-```bash
-ls /dev/video*
-```
-
-You should see `/dev/video0` (and maybe `/dev/video1`).
-If your camera is on a different index, update `open_camera()` in the script.
-
-### 2. `ModuleNotFoundError: No module named 'jetson_inference'`
-
-- Make sure you completed the `jetson-inference` build and install steps.
-- Confirm:
-
-```bash
-python3 -c "import jetson_inference, jetson_utils"
-```
-
-### 3. Low FPS / lag
-
-- Reduce camera resolution from the Jetson side.
-- Make sure nothing else heavy is running on the device.
-- Use a more performance-oriented Jetson (Xavier / Orin) for multiple cameras.
-
----
-
-## Ideas & Extensions
-
-Some ideas you could add later:
-
-- Save periodic snapshots when violations occur.
-- Expose metrics over HTTP (Prometheus / simple REST API).
-- Add a simple **web dashboard** that shows live counts.
-- Trigger alerts (e.g., sound, LED, or Telegram bot) when violations exceed a threshold.
-
----
-
-## Contributing
-
-Pull requests and suggestions are welcome!
-
-If you:
-- Add support for multiple cameras,
-- Improve UI overlays,
-- Or integrate this into a larger monitoring system,
-
-feel free to open an issue or send a PR.
-
----
-
-## License
-
-You can choose your preferred license (MIT, Apache-2.0, etc.).  
-Typical setup:
-
-- Add a `LICENSE` file at the root.
-- Mention the chosen license here in the README.
-
----
-
-## Author
+Replace with your actual details:
 
 - **Your Name**  
-- GitHub: [@your-username](https://github.com/your-username)
-
-(Replace these with your actual details before publishing.)
-
+- GitHub: https://github.com/your-username
